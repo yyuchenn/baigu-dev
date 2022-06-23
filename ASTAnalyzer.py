@@ -33,8 +33,7 @@ _db_expr_spot = {"Expression": ["body"], "FunctionDef": ["*decorator_list", "ret
                  "Set": ["*elts"], "ListComp": ["elt"], "SetComp": ["elt"], "DictComp": ["key", "value"],
                  "GeneratorExp": ["elt"], "Await": ["value"], "Yield": ["value"], "YieldFrom": ["value"],
                  "Compare": ["left", "*comparators"],  # len(comparators) == len(ops)
-                 "Call": ["func", "*args"], "FormattedValue": ["value", "format_spec"], "JoinedStr": ["*values"],
-                 # format_spec has to be JoinStr, where values of JoinStr has to be a list of Str Constant
+                 "Call": ["func", "*args"],
                  "Attribute": ["value"], "Subscript": ["value"], "Starred": ["value"], "List": ["*elts"],
                  "Tuple": ["*elts"], "Slice": ["lower", "upper", "step"], "Index": ["value"],
                  "ExceptHandler": ["type"],
@@ -98,8 +97,10 @@ class ASTAnalyzer(NodeVisitor):
         src = choice(getattr(self, f"{var_type}_list"))
         dst_potential_list = []
         for var in getattr(self, f"{var_type}_spot_list"):
-            if var[:len(src)] != src:
+            if var[:len(src)] != src and var != src[:len(var)]:
                 dst_potential_list.append(var)
+        if not dst_potential_list:
+            return src, src
         dst_path = choice(dst_potential_list)
         dst_node = dst_path.get_from_tree(self.tree)
         dst_arg_name = choice(getattr(_this, f"_db_{var_type}_spot")[dst_node.__class__.__name__])
