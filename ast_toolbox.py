@@ -1,6 +1,8 @@
+from typing import Any
 import ast
 import sys
-from ast import AST, NodeVisitor, iter_fields
+from copy import deepcopy
+from ast import *
 
 from ast_util import ASTPath, update_list
 
@@ -42,9 +44,9 @@ _db_expr_spot = {"Expression": ["body"], "FunctionDef": ["*decorator_list", "ret
                  }
 
 
-class ASTAnalyzer(NodeVisitor):
+class ASTShuffler(NodeVisitor):
     def __init__(self, tree: AST):
-        self.tree: AST = tree
+        self.tree: AST = deepcopy(tree)
         self._path = ASTPath([])
         self.stmt_list: list[ASTPath] = []
         self.stmt_spot_list: list[ASTPath] = []
@@ -133,10 +135,8 @@ class ASTAnalyzer(NodeVisitor):
                 getattr(src_parent_node, src_[-1].arg_name).pop(src_[-1].index)
                 if not dst.is_in_list() and dst_node is not None:
                     getattr(src_parent_node, src_[-1].arg_name).insert(src_[-1].index, dst_node)
-                if not getattr(src_parent_node, src_[-1].arg_name):
-                    setattr(src_parent_node, src_[-1].arg_name, [chaff()])
             else:
-                setattr(src_parent_node, src[-1].arg_name, chaff())
+                setattr(src_parent_node, src[-1].arg_name, None)
                 if not dst.is_in_list() and dst_node is not None:
                     setattr(src_parent_node, src_[-1].arg_name, dst_node)
             # TODO: apply special rules to make ast compliant
@@ -148,6 +148,46 @@ class ASTAnalyzer(NodeVisitor):
                 self._update_lists(ASTPath([ASTPath.Element("**")]), src_)
 
 
-def chaff():
-    # TODO: chaff
-    return ast.Pass()
+class ASTFixer(NodeVisitor):
+    def __init__(self, tree):
+        self.tree = deepcopy(tree)
+        super().visit(self.tree)
+
+    def __getattr__(self, name):
+        if name[:6] != "visit_":
+            return
+
+        def visit_(*args, **kwargs):
+            type_name = name[6:]
+            node = args[0]
+            if type_name in _db_stmt_spot:
+                spots = _db_stmt_spot[type_name]
+                for spot in spots:
+                    if spot[0] == "*":
+                        if not getattr(node, spot[1:]):
+                            setattr(node, spot[1:], [ASTChaff.stmt()])
+                    else:
+                        if not getattr(node, spot):
+                            setattr(node, spot, ASTChaff.stmt())
+            if type_name in _db_expr_spot:
+                spots = _db_expr_spot[type_name]
+                for spot in spots:
+                    if spot[0] == "*":
+                        if not getattr(node, spot[1:]):
+                            setattr(node, spot, [ASTChaff.expr()])
+                    else:
+                        if not getattr(node, spot):
+                            setattr(node, spot, ASTChaff.expr())
+            self.generic_visit(node)
+
+        return visit_
+
+
+class ASTChaff:
+    @staticmethod
+    def stmt():
+        return ast.Pass()
+
+    @staticmethod
+    def expr():
+        return Constant(42)

@@ -1,16 +1,17 @@
 import ast
 import astor
-from copy import deepcopy
-from ASTAnalyzer import ASTAnalyzer
+from ast_toolbox import ASTShuffler, ASTFixer
 
 
 def run(src: str):
     tree = ast.parse(src)
     instructions = []
-    analyzer = ASTAnalyzer(deepcopy(tree))
-    analyzer.shuffle("stmt", instructions=instructions, n=20)
-    analyzer.shuffle("expr", instructions=instructions, n=20)
-    print(astor.to_source(analyzer.tree))
+    shuffler = ASTShuffler(tree)
+    shuffler.shuffle("stmt", instructions=instructions, n=20)
+    shuffler.shuffle("expr", instructions=instructions, n=20)
+    fixer = ASTFixer(shuffler.tree)
+    print(astor.to_source(fixer.tree))
+    # ast.parse(astor.to_source(fixer.tree))
 
 
 if __name__ == '__main__':
