@@ -23,7 +23,26 @@ def get_price(product: str) -> float:
     return price_dict[product]
 
 
+def md5_gen(list_):
+    from hashlib import md5
+    if type(list_) != list:
+        raise TypeError(f"list_ should be a list. Got {type(list_)} instead.")
+    for i in list_:
+        yield md5(i).hexdigest()
+
+
+def save_to_json():
+    names = ["alice", "bob", "charlie"]
+    with open("names.json", "w") as f:
+        for name_hash in md5_gen(names):
+            f.write(name_hash)
+
+
 def list_1_to_n(n: int) -> []:
+    try:
+        n = int(n)
+    except TypeError:
+        print("this shouldn't happen.")
     a = [i for i in range(n)]
     return a[1:]
 
