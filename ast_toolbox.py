@@ -19,8 +19,9 @@ _db_stmt_spot = {"Module": ["*body"], "Interactive": ["*body"], "Suite": ["*body
                  "ExceptHandler": ["*body"]}
 
 _db_expr = ["BoolOp", "BinOp", "UnaryOp", "Lambda", "IfExp", "Dict", "Set", "ListComp", "SetComp", "DictComp",
-            "GeneratorExp", "Await", "Yield", "YieldFrom", "Compare", "Call", "Num", "Str", "FormattedValue",
-            "JoinedStr", "Bytes", "NameConstant", "Ellipsis", "Constant", "Attribute", "Subscript", "Starred", "Name",
+            "GeneratorExp", "Await", "Yield", "YieldFrom", "Compare", "Call", "Num", "Str",
+            # TODO: fix: value of FormattedValue should not be none
+            "Bytes", "NameConstant", "Ellipsis", "Constant", "Attribute", "Subscript", "Starred", "Name",
             "List", "Tuple"]
 
 _db_expr_spot = {"Expression": ["body"], "FunctionDef": ["*decorator_list", "returns"],
@@ -139,7 +140,6 @@ class ASTShuffler(NodeVisitor):
                 setattr(src_parent_node, src[-1].arg_name, None)
                 if not dst.is_in_list() and dst_node is not None:
                     setattr(src_parent_node, src_[-1].arg_name, dst_node)
-            # TODO: apply special rules to make ast compliant
             # update lists
             if not dst.is_in_list() and dst_node is not None:
                 self._update_lists(dst, ASTPath([ASTPath.Element("**")]))
