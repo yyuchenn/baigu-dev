@@ -1,53 +1,12 @@
-from typing import Any
-import ast
-import sys
 from copy import deepcopy
-from ast import *
-
+import ast
 from ast_util import ASTPath, update_list
-
-_this = sys.modules[__name__]
-
-_db_stmt = ["FunctionDef", "AsyncFunctionDef", "ClassDef", "Return", "Delete", "Assign", "AugAssign", "AnnAssign",
-            "For", "AsyncFor", "While", "If", "With", "AsyncWith", "Raise", "Try", "Assert", "Import", "ImportFrom",
-            "Global", "Nonlocal", "Expr", "Pass", "Break", "Continue"]
-
-_db_stmt_spot = {"Module": ["*body"], "Interactive": ["*body"], "Suite": ["*body"], "FunctionDef": ["*body"],
-                 "AsyncFunctionDef": ["*body"], "ClassDef": ["*body"], "For": ["*body", "*orelse"],
-                 "AsyncFor": ["*body", "*orelse"], "While": ["*body", "*orelse"], "If": ["*body", "*orelse"],
-                 "With": ["*body"], "AsyncWith": ["*body"], "Try": ["*body", "*orelse", "*finalbody"],
-                 "ExceptHandler": ["*body"]}
-
-_db_expr = ["BoolOp", "BinOp", "UnaryOp", "Lambda", "IfExp", "Dict", "Set", "ListComp", "SetComp", "DictComp",
-            "GeneratorExp", "Await", "Yield", "YieldFrom", "Compare", "Call", "Num", "Str",
-            # TODO: fix: value of FormattedValue should not be none
-            "Bytes", "NameConstant", "Ellipsis", "Constant", "Attribute", "Subscript", "Starred", "Name",
-            "List", "Tuple"]
-
-_db_expr_spot = {"Expression": ["body"], "FunctionDef": ["*decorator_list", "returns"],
-                 "AsyncFunctionDef": ["*decorator_list", "returns"], "ClassDef": ["*bases", "*decorator_list"],
-                 "Return": ["value"], "Delete": ["*targets"], "Assign": ["*targets", "value"],
-                 "AugAssign": ["target", "value"], "AnnAssign": ["target", "annotation", "value"],
-                 "For": ["target", "iter"], "AsyncFor": ["target", "iter"], "While": ["test"], "If": ["test"],
-                 "Raise": ["exc", "cause"], "Assert": ["test", "msg"], "Expr": ["value"], "BoolOp": ["*values"],
-                 "BinOp": ["left", "right"], "UnaryOp": ["oprand"], "Lambda": ["body"],
-                 "IfExp": ["test", "body", "orelse"], "Dict": ["*keys", "*values"],
-                 # a Dict has to have same num of keys and values
-                 "Set": ["*elts"], "ListComp": ["elt"], "SetComp": ["elt"], "DictComp": ["key", "value"],
-                 "GeneratorExp": ["elt"], "Await": ["value"], "Yield": ["value"], "YieldFrom": ["value"],
-                 "Compare": ["left", "*comparators"],  # len(comparators) == len(ops)
-                 "Call": ["func", "*args"],
-                 "Attribute": ["value"], "Subscript": ["value"], "Starred": ["value"], "List": ["*elts"],
-                 "Tuple": ["*elts"], "Slice": ["lower", "upper", "step"], "Index": ["value"],
-                 "ExceptHandler": ["type"],
-                 "arguments": ["*kw_defaults", "*defaults"], "arg": ["annotation"],  # len(args) <= len(defaults)
-                 "keyword": ["value"], "withitem": ["context_expr", "optional_vars"]
-                 }
+from ast_syntax import NodeAttribute, NODE_SYNTAX, dst_validator
 
 
-class ASTShuffler(NodeVisitor):
-    def __init__(self, tree: AST):
-        self.tree: AST = deepcopy(tree)
+class ASTShuffler(ast.NodeVisitor):
+    def __init__(self, tree: ast.AST):
+        self.tree: ast.AST = deepcopy(tree)
         self._path = ASTPath([])
         self.stmt_list: list[ASTPath] = []
         self.stmt_spot_list: list[ASTPath] = []
@@ -55,15 +14,15 @@ class ASTShuffler(NodeVisitor):
         self.expr_spot_list: list[ASTPath] = []
         super().visit(self.tree)
 
-    def generic_visit(self, node: AST):
-        for field, value in iter_fields(node):
+    def generic_visit(self, node: ast.AST):
+        for field, value in ast.iter_fields(node):
             if isinstance(value, list):
                 for i, item in enumerate(value):
-                    if isinstance(item, AST):
+                    if isinstance(item, ast.AST):
                         self._path, _ = self._path.child_path(field, i), self._path
                         self.visit(item)
                         self._path = _
-            elif isinstance(value, AST):
+            elif isinstance(value, ast.AST):
                 self._path, _ = self._path.child_path(field), self._path
                 self.visit(value)
                 self._path = _
@@ -73,15 +32,18 @@ class ASTShuffler(NodeVisitor):
             return
 
         def visit_(*args, **kwargs):
-            type_name = name[6:]
+            type_ = getattr(ast, name[6:])
             node = args[0]
-            if type_name in _db_stmt:
+            if type_ not in NODE_SYNTAX:
+                self.generic_visit(node)
+                return
+            if isinstance(type_(), ast.stmt):
                 self.stmt_list.append(ASTPath(self._path))
-            if type_name in _db_stmt_spot:
-                self.stmt_spot_list.append(ASTPath(self._path))
-            if type_name in _db_expr:
+            if isinstance(type_(), ast.expr):
                 self.expr_list.append(ASTPath(self._path))
-            if type_name in _db_expr_spot:
+            if len(NODE_SYNTAX[type_].filter_attrs(ast.stmt)) != 0:
+                self.stmt_spot_list.append(ASTPath(self._path))
+            if len(NODE_SYNTAX[type_].filter_attrs(ast.expr)) != 0:
                 self.expr_spot_list.append(ASTPath(self._path))
             self.generic_visit(node)
 
@@ -99,18 +61,25 @@ class ASTShuffler(NodeVisitor):
         from random import choice, randint
         src = choice(getattr(self, f"{var_type}_list"))
         dst_potential_list = []
-        for var in getattr(self, f"{var_type}_spot_list"):
-            if var[:len(src)] != src and var != src[:len(var)]:
-                dst_potential_list.append(var)
+        for path in getattr(self, f"{var_type}_spot_list"):
+            if path[:len(src)] != src and path != src[:len(path)]:
+                dst_parent_node = path.get_from_tree(self.tree)
+                src_node = src.get_from_tree(self.tree)
+                src_parent_node = src.parent_path.get_from_tree(self.tree)
+                attr_list = NODE_SYNTAX[dst_parent_node.__class__].filter_attrs(getattr(ast, var_type))
+                attr_list = filter(dst_validator(dst_parent_node.__class__, src_node.__class__), attr_list)
+                for attr in attr_list:
+                    if attr.is_list:
+                        index = randint(0, len(getattr(dst_parent_node, attr.name)))
+                        dst_potential_list.append(path.child_path(attr.name, index))
+                    else:
+                        dst_node = path.child_path(attr.name).get_from_tree(self.tree)
+                        if dst_validator(src_parent_node.__class__, dst_node.__class__)(
+                                NodeAttribute(f"PSEUDO {src[-1].arg_name}")):
+                            dst_potential_list.append(path.child_path(attr.name))
         if not dst_potential_list:
             return src, src
-        dst_path = choice(dst_potential_list)
-        dst_node = dst_path.get_from_tree(self.tree)
-        dst_arg_name = choice(getattr(_this, f"_db_{var_type}_spot")[dst_node.__class__.__name__])
-        if dst_arg_name[0] == "*":
-            dst = dst_path.child_path(dst_arg_name[1:], randint(0, len(getattr(dst_node, dst_arg_name[1:]))))
-        else:
-            dst = dst_path.child_path(dst_arg_name)
+        dst = choice(dst_potential_list)
         return src, dst
 
     def shuffle(self, var_type, n=2, instructions=()):
@@ -124,6 +93,7 @@ class ASTShuffler(NodeVisitor):
             src_parent_node = src.parent_path.get_from_tree(self.tree)
             dst_node = dst.get_from_tree(self.tree)
             dst_parent_node = dst.parent_path.get_from_tree(self.tree)
+            print(src_node, src_parent_node, dst_node, dst_parent_node)
             # make src node attaches to dst_parent
             if dst.is_in_list():
                 getattr(dst_parent_node, dst[-1].arg_name).insert(dst[-1].index, src_node)
@@ -148,7 +118,7 @@ class ASTShuffler(NodeVisitor):
                 self._update_lists(ASTPath([ASTPath.Element("**")]), src_)
 
 
-class ASTFixer(NodeVisitor):
+class ASTFixer(ast.NodeVisitor):
     def __init__(self, tree):
         self.tree = deepcopy(tree)
         super().visit(self.tree)
@@ -158,36 +128,12 @@ class ASTFixer(NodeVisitor):
             return
 
         def visit_(*args, **kwargs):
-            type_name = name[6:]
+            type_ = getattr(ast, name[6:])
             node = args[0]
-            if type_name in _db_stmt_spot:
-                spots = _db_stmt_spot[type_name]
-                for spot in spots:
-                    if spot[0] == "*":
-                        if not getattr(node, spot[1:]):
-                            setattr(node, spot[1:], [ASTChaff.stmt()])
-                    else:
-                        if not getattr(node, spot):
-                            setattr(node, spot, ASTChaff.stmt())
-            if type_name in _db_expr_spot:
-                spots = _db_expr_spot[type_name]
-                for spot in spots:
-                    if spot[0] == "*":
-                        if not getattr(node, spot[1:]):
-                            setattr(node, spot, [ASTChaff.expr()])
-                    else:
-                        if not getattr(node, spot):
-                            setattr(node, spot, ASTChaff.expr())
+            if type_ not in NODE_SYNTAX:
+                self.generic_visit(node)
+                return
+            NODE_SYNTAX[type_].fix(node)
             self.generic_visit(node)
 
         return visit_
-
-
-class ASTChaff:
-    @staticmethod
-    def stmt():
-        return ast.Pass()
-
-    @staticmethod
-    def expr():
-        return Constant(42)

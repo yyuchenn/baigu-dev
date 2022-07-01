@@ -1,5 +1,5 @@
 from __future__ import annotations
-from ast import AST
+import ast
 from copy import deepcopy
 
 
@@ -94,7 +94,7 @@ class ASTPath:
         if self._path[0].arg_name == temp_name:
             self._path = list(ASTPath(dst)) + self._path[1:]
 
-    def get_from_tree(self, tree: AST):
+    def get_from_tree(self, tree: ast.AST):
         cur = tree
         for p in self._path:
             if p.is_list():
@@ -124,3 +124,13 @@ def update_list(list_: list[ASTPath], src: ASTPath, dst: ASTPath):
             item[len(dst) - 1].index += 1
     for item in list_:
         item.restore_from(dst, "_")
+
+
+class ASTChaff:
+    @staticmethod
+    def stmt():
+        return ast.Pass()
+
+    @staticmethod
+    def expr():
+        return ast.Constant(42)
