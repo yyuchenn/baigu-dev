@@ -2,8 +2,6 @@ from __future__ import annotations
 import ast
 from re import compile
 
-from ast_util import ASTChaff
-
 
 class NodeAttribute:
     def __init__(self, attr_str: str):
@@ -60,6 +58,16 @@ def dst_validator(dst_: type, src_: type):
         return True
 
     return validator
+
+
+class ASTChaff:
+    @staticmethod
+    def stmt():
+        return ast.Pass()
+
+    @staticmethod
+    def expr():
+        return ast.Constant(42)
 
 
 def _construct_syntax(asdl: list[str]):
