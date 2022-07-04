@@ -47,6 +47,13 @@ def list_1_to_n(n: int) -> []:
     return a[1:]
 
 
+def generator01():
+    i = 1
+    while True:
+        i = 1 - i
+        yield i
+
+
 class Dog:
     def __init__(self, name: str, age: int):
         self._set_name(name)
