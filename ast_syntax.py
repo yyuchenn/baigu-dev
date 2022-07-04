@@ -3,6 +3,11 @@ import ast
 from re import compile
 
 
+lvalue_spots = [(ast.Assign, "targets"), (ast.AugAssign, "target"), (ast.For, "target"),
+                (ast.withitem, "optional_vars")]
+lvalues = [ast.Attribute, ast.Subscript, ast.Starred, ast.Name]  # actually, List & Tuple can be lvalues as well
+
+
 class NodeAttribute:
     def __init__(self, attr_str: str):
         groups = compile(r"(\w+?)(\*?)(\??) (\w+)").match(attr_str).groups()
@@ -24,7 +29,6 @@ class NodeAttribute:
 class NodeType:
     def __init__(self, attrs: list[NodeAttribute]):
         self.attrs = attrs
-        self.special_dst_filter = []
 
     def filter_attrs(self, type_: type):
         return list(filter(lambda a: isinstance(type_(), a.acceptable_type), self.attrs))
@@ -32,16 +36,13 @@ class NodeType:
     def fix(self, node):
         for attr in self.attrs:
             if attr.is_not_null and not getattr(node, attr.name):
+                chaff = getattr(ASTChaff, attr.acceptable_type.__name__)()
+                if (node.__class__, attr.name) in lvalue_spots:
+                    chaff = ASTChaff.Name()
                 if attr.is_list:
-                    if isinstance(attr.acceptable_type(), ast.stmt):
-                        setattr(node, attr.name, [ASTChaff.stmt()])
-                    elif isinstance(attr.acceptable_type(), ast.expr):
-                        setattr(node, attr.name, [ASTChaff.expr()])
+                    setattr(node, attr.name, [chaff])
                 else:
-                    if isinstance(attr.acceptable_type(), ast.stmt):
-                        setattr(node, attr.name, ASTChaff.stmt())
-                    elif isinstance(attr.acceptable_type(), ast.expr):
-                        setattr(node, attr.name, ASTChaff.expr())
+                    setattr(node, attr.name, chaff)
 
 
 def dst_validator(dst_: type, src_: type):
@@ -49,9 +50,10 @@ def dst_validator(dst_: type, src_: type):
         if src_ == ast.FormattedValue:
             if dst_ != ast.JoinedStr or dst_attr.name != "values":
                 return False
-        if dst_ == ast.Assign and dst_attr.name == "targets":
-            if src_ != ast.Name:
-                return False
+
+        if (dst_, dst_attr.name) in lvalue_spots and src_ not in lvalues:
+            return False
+
         if dst_ == ast.JoinedStr and dst_attr.name == "values":
             if src_ != ast.Str and src_ != ast.FormattedValue:
                 return False
@@ -69,11 +71,27 @@ class ASTChaff:
     def expr():
         return ast.Constant(42)
 
+    @staticmethod
+    def Name():
+        return ast.Name(id="_", ctx=ast.Store())
+
+    @staticmethod
+    def slice():
+        return ast.Index(value=ASTChaff.expr())
+
+    @staticmethod
+    def keyword():
+        return ast.keyword(arg='_', value=ASTChaff.expr())
+
+    @staticmethod
+    def arg():
+        return ast.arg(arg='_')
+
 
 def _construct_syntax(asdl: list[str]):
     node_dict: dict[type, NodeType] = {}
     for rule in asdl:
-        groups = compile(r"([A-Z]\w+?)\((\w+?\*?\?? \w+?(, \w+?\*?\?? \w+?)*)?\)").match(rule).groups()
+        groups = compile(r"(\w+?)\((\w+?\*?\?? \w+?(, \w+?\*?\?? \w+?)*)?\)").match(rule).groups()
         node_class = getattr(ast, groups[0])
         attributes = []
         if groups[1] is not None:
@@ -83,11 +101,16 @@ def _construct_syntax(asdl: list[str]):
     return node_dict
 
 
-# TODO: Assign fix: lval
+# TODO: Yield/YieldFrom can only be in some specific places
 # TODO: Dict fix: len(keys) == len(values)
 # TODO: Compare fix: len(comparators) == len(ops)
 # TODO: arg fix: len(args) <= len(defaults)
-_ASDL = ["FunctionDef(identifier name, arguments args, stmt* body, expr*? decorator_list, expr? returns)",
+
+# do not obfuscate the followings: type annotation, f-string, comprehension
+_ASDL = ["Module(stmt* body)",
+         "Interactive(stmt* body)",
+         "Expression(expr body)",
+         "FunctionDef(identifier name, arguments args, stmt* body, expr*? decorator_list, expr? returns)",
          "AsyncFunctionDef(identifier name, arguments args, stmt* body, expr*? decorator_list, expr? returns)",
          "ClassDef(identifier name, expr* bases, keyword* keywords, stmt* body, expr*? decorator_list)",
          "Return(expr? value)",
@@ -113,7 +136,6 @@ _ASDL = ["FunctionDef(identifier name, arguments args, stmt* body, expr*? decora
          "Pass()",
          "Break()",
          "Continue()",
-         # expr
          "BoolOp(boolop op, expr* values)",
          "BinOp(expr left, operator op, expr right)",
          "UnaryOp(unaryop op, expr operand)",
@@ -125,24 +147,31 @@ _ASDL = ["FunctionDef(identifier name, arguments args, stmt* body, expr*? decora
          "SetComp(expr elt, comprehension* generators)",
          "DictComp(expr key, expr value, comprehension* generators)",
          "GeneratorExp(expr elt, comprehension* generators)",
-         # the grammar constrains where yield expressions can occur
          "Await(expr value)",
          "Yield(expr? value)",
          "YieldFrom(expr value)",
-         #  need sequences for compare to distinguish between
          "Compare(expr left, cmpop* ops, expr* comparators)",
-         "Call(expr func, expr* args, keyword* keywords)",
-         "FormattedValue(expr value, int? conversion, JoinedStr? format_spec)",
-         "JoinedStr(expr* values)",
+         "Call(expr func, expr*? args, keyword*? keywords)",
+         # "FormattedValue(expr value, int? conversion, JoinedStr? format_spec)",
+         # "JoinedStr(expr* values)",
          "Ellipsis()",
          "Constant()",
-         # the following expression can appear in assignment context
          "Attribute(expr value, identifier attr, expr_context ctx)",
          "Subscript(expr value, slice slice, expr_context ctx)",
          "Starred(expr value, expr_context ctx)",
          "Name(identifier id, expr_context ctx)",
          "List(expr* elts, expr_context ctx)",
          "Tuple(expr* elts, expr_context ctx)"
+         "Slice(expr? lower, expr? upper, expr? step)",
+         "ExtSlice(slice* dims)",
+         "Index(expr value)",
+         # "comprehension(expr target, expr iter, expr* ifs, int is_async)",
+         "ExceptHandler(expr? type, identifier? name, stmt* body)",
+         "arguments(arg* args, arg? vararg, arg*? kwonlyargs, expr*? kw_defaults, arg? kwarg, expr*? defaults)",
+         "arg(identifier arg, expr? annotation)",
+         "keyword(identifier? arg, expr value)",
+         "alias(identifier name, identifier? asname)",
+         "withitem(expr context_expr, expr? optional_vars)"
          ]
 
 NODE_SYNTAX: dict[type, NodeType] = _construct_syntax(_ASDL)

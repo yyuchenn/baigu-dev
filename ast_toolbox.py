@@ -36,7 +36,7 @@ class ASTShuffler(ast.NodeVisitor):
             type_ = getattr(ast, name[6:])
             node = args[0]
             if type_ not in NODE_SYNTAX:
-                self.generic_visit(node)
+                # self.generic_visit(node)  # do not visit the non-supported node
                 return
             if isinstance(type_(), ast.stmt):
                 self.stmt_list.append(_ASTPath(self._path))
