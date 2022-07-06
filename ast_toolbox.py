@@ -8,6 +8,7 @@ from ast_syntax import NodeAttribute, NODE_SYNTAX, dst_validator
 class ASTShuffler(ast.NodeVisitor):
     def __init__(self, tree: ast.AST):
         self.tree: ast.AST = deepcopy(tree)
+        self.actions: list[tuple[_ASTPath, _ASTPath]] = []
         self._path = _ASTPath([])
         self.stmt_list: list[_ASTPath] = []
         self.stmt_spot_list: list[_ASTPath] = []
@@ -94,7 +95,6 @@ class ASTShuffler(ast.NodeVisitor):
             src_parent_node = src.parent_path.get_from_tree(self.tree)
             dst_node = dst.get_from_tree(self.tree)
             dst_parent_node = dst.parent_path.get_from_tree(self.tree)
-            print(src_node, src_parent_node, dst_node, dst_parent_node)
             # make src node attaches to dst_parent
             if dst.is_in_list():
                 getattr(dst_parent_node, dst[-1].arg_name).insert(dst[-1].index, src_node)
@@ -117,6 +117,8 @@ class ASTShuffler(ast.NodeVisitor):
             self._update_lists(src, dst)
             if not dst.is_in_list() and dst_node is not None:
                 self._update_lists(_ASTPath([_ASTPath.Element("**")]), src_)
+
+            self.actions.append((deepcopy(src_), deepcopy(dst)))
 
 
 class ASTFixer(ast.NodeVisitor):
