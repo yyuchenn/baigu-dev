@@ -34,8 +34,10 @@ class NodeType:
         return list(filter(lambda a: isinstance(type_(), a.acceptable_type), self.attrs))
 
     def fix(self, node):
+        ret: list[str] = []
         for attr in self.attrs:
             if attr.is_not_null and not getattr(node, attr.name):
+                ret.append(attr.name)
                 chaff = getattr(ASTChaff, attr.acceptable_type.__name__)()
                 if (node.__class__, attr.name) in lvalue_spots:
                     chaff = ASTChaff.Name()
@@ -43,6 +45,7 @@ class NodeType:
                     setattr(node, attr.name, [chaff])
                 else:
                     setattr(node, attr.name, chaff)
+        return ret
 
 
 def dst_validator(dst_: type, src_: type):
@@ -112,7 +115,7 @@ _ASDL = ["Module(stmt* body)",
          "Expression(expr body)",
          "FunctionDef(identifier name, arguments args, stmt* body, expr*? decorator_list, expr? returns)",
          "AsyncFunctionDef(identifier name, arguments args, stmt* body, expr*? decorator_list, expr? returns)",
-         "ClassDef(identifier name, expr* bases, keyword* keywords, stmt* body, expr*? decorator_list)",
+         "ClassDef(identifier name, expr*? bases, keyword* keywords, stmt* body, expr*? decorator_list)",
          "Return(expr? value)",
          "Delete(expr* targets)",
          "Assign(expr* targets, expr value)",
@@ -167,7 +170,7 @@ _ASDL = ["Module(stmt* body)",
          "Index(expr value)",
          # "comprehension(expr target, expr iter, expr* ifs, int is_async)",
          "ExceptHandler(expr? type, identifier? name, stmt* body)",
-         "arguments(arg* args, arg? vararg, arg*? kwonlyargs, expr*? kw_defaults, arg? kwarg, expr*? defaults)",
+         "arguments(arg*? args, arg? vararg, arg*? kwonlyargs, expr*? kw_defaults, arg? kwarg, expr*? defaults)",
          "arg(identifier arg, expr? annotation)",
          "keyword(identifier? arg, expr value)",
          "alias(identifier name, identifier? asname)",

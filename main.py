@@ -16,7 +16,7 @@ def run(src: str):
         print(astor.to_source(fixer.tree))
         tree2 = ast.parse(astor.to_source(fixer.tree))
         TreeDiff(fixer.tree, tree2).print()
-        tree3 = unpack(tree2, shuffler.actions)
+        tree3 = unpack(tree2, shuffler.actions, fixer.actions)
         print(astor.to_source(tree3))
         TreeDiff(tree, tree3).print()
 

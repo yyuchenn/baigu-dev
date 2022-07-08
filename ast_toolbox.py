@@ -5,16 +5,9 @@ import ast
 from ast_syntax import NodeAttribute, NODE_SYNTAX, dst_validator
 
 
-class ASTShuffler(ast.NodeVisitor):
-    def __init__(self, tree: ast.AST):
-        self.tree: ast.AST = deepcopy(tree)
-        self.actions: list[tuple[_ASTPath, _ASTPath]] = []
+class NodeVisitor(ast.NodeVisitor):
+    def __init__(self):
         self._path = _ASTPath([])
-        self.stmt_list: list[_ASTPath] = []
-        self.stmt_spot_list: list[_ASTPath] = []
-        self.expr_list: list[_ASTPath] = []
-        self.expr_spot_list: list[_ASTPath] = []
-        super().visit(self.tree)
 
     def generic_visit(self, node: ast.AST):
         for field, value in ast.iter_fields(node):
@@ -28,6 +21,18 @@ class ASTShuffler(ast.NodeVisitor):
                 self._path, _ = self._path.child_path(field), self._path
                 self.visit(value)
                 self._path = _
+
+
+class ASTShuffler(NodeVisitor):
+    def __init__(self, tree: ast.AST):
+        super().__init__()
+        self.tree: ast.AST = deepcopy(tree)
+        self.actions: list[tuple[_ASTPath, _ASTPath]] = []
+        self.stmt_list: list[_ASTPath] = []
+        self.stmt_spot_list: list[_ASTPath] = []
+        self.expr_list: list[_ASTPath] = []
+        self.expr_spot_list: list[_ASTPath] = []
+        super().visit(self.tree)
 
     def __getattr__(self, name):
         if name[:6] != "visit_":
@@ -121,9 +126,11 @@ class ASTShuffler(ast.NodeVisitor):
             self.actions.append((deepcopy(src_), deepcopy(dst)))
 
 
-class ASTFixer(ast.NodeVisitor):
+class ASTFixer(NodeVisitor):
     def __init__(self, tree):
+        super().__init__()
         self.tree = deepcopy(tree)
+        self.actions: list[_ASTPath] = []
         super().visit(self.tree)
 
     def __getattr__(self, name):
@@ -136,7 +143,9 @@ class ASTFixer(ast.NodeVisitor):
             if type_ not in NODE_SYNTAX:
                 self.generic_visit(node)
                 return
-            NODE_SYNTAX[type_].fix(node)
+            fixed_locs = NODE_SYNTAX[type_].fix(node)
+            for loc in fixed_locs:
+                self.actions.append(self._path.child_path(loc))
             self.generic_visit(node)
 
         return visit_

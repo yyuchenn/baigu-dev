@@ -1,10 +1,17 @@
 import ast
 
-from ast_toolbox import _ASTPath
+from ast_toolbox import _ASTPath, NODE_SYNTAX
 
 
-def unpack(tree: ast.AST, actions: list[tuple[_ASTPath, _ASTPath]]) -> ast.AST:
-    for action in actions[::-1]:
+def unpack(tree: ast.AST, shuffle_actions: list[tuple[_ASTPath, _ASTPath]],
+           fix_actions: list[_ASTPath]) -> ast.AST:
+    for action in fix_actions:
+        parent = action.parent_path.get_from_tree(tree)
+        if filter(lambda attr: attr.name == action[-1].arg_name, NODE_SYNTAX[type(parent)].attrs).__next__().is_list:
+            setattr(parent, action[-1].arg_name, [])
+        else:
+            setattr(parent, action[-1].arg_name, None)
+    for action in shuffle_actions[::-1]:
         dst, src = action
 
         dst_node = dst.get_from_tree(tree)
