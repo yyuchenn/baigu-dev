@@ -2,7 +2,7 @@ from __future__ import annotations
 from copy import deepcopy
 import ast
 
-from ast_syntax import NodeAttribute, NODE_SYNTAX, dst_validator
+from ast_syntax import _ASTPath, NodeAttribute, NODE_SYNTAX, dst_validator
 
 
 class NodeVisitor(ast.NodeVisitor):
@@ -145,114 +145,10 @@ class ASTFixer(NodeVisitor):
                 return
             fixed_locs = NODE_SYNTAX[type_].fix(node)
             for loc in fixed_locs:
-                self.actions.append(self._path.child_path(loc))
+                self.actions.append(self._path.child_path(loc.arg_name, loc.index))
             self.generic_visit(node)
 
         return visit_
-
-
-class _ASTPath:
-    class Element:
-        def __init__(self, arg_name: str, index: int | None = None):
-            self.arg_name = arg_name
-            self.index = index
-
-        def __eq__(self, other):
-            return self.arg_name == other.arg_name and self.index == other.index
-
-        def __str__(self):
-            if self.index is None:
-                return f"{self.arg_name}"
-            return f"{self.arg_name}_{self.index}"
-
-        def is_list(self) -> bool:
-            return self.index is not None
-
-    def __init__(self, path: _ASTPath | list[Element] | tuple[Element]):
-        self._path = list(deepcopy(path))
-
-    def __eq__(self, other):
-        return self._path == list(other)
-
-    def __getitem__(self, item):
-        return self._path[item]
-
-    def __len__(self):
-        return len(self._path)
-
-    def __iter__(self):
-        for i in self._path:
-            yield i
-
-    def __str__(self):
-        return str([str(i) for i in self._path])
-
-    @property
-    def parent_path(self) -> _ASTPath:
-        if len(self._path) == 0:
-            raise Exception("root has no parent")
-        return _ASTPath(list(self)[:-1])
-
-    def child_path(self, arg_name: str, index: int | None = None) -> _ASTPath:
-        return _ASTPath(list(self) + [self.Element(arg_name, index)])
-
-    def is_in_list(self) -> bool:
-        if len(self._path) == 0:
-            return False
-        return self._path[-1].is_list()
-
-    def common_path(self, path: _ASTPath) -> tuple:
-        shorter, longer = self, path
-        if len(path) < len(self):
-            shorter, longer = path, self
-        result = []
-        for i, item in enumerate(shorter):
-            if longer[i] == item:
-                result += [item]
-            else:
-                break
-        return tuple(result)
-
-    def has_child(self, path: _ASTPath) -> bool:
-        return list(path)[:len(self._path)] == self._path
-
-    def is_in_same_list(self, path: _ASTPath) -> bool:
-        if not self.is_in_list():
-            return False
-        if len(path) < len(self._path):
-            return False
-        if self.common_path(path) != tuple(self._path) and self.common_path(path) != tuple(self._path)[:-1]:
-            return False
-        last = list(path)[len(self._path) - 1]
-        if not last.is_list() or last.arg_name != self._path[-1].arg_name:
-            return False
-        return True
-
-    def move_to(self, src: _ASTPath, temp_name: str):
-        if len(src) > len(self._path):
-            return
-        for i in range(len(src)):
-            if src[i] != self._path[i]:
-                return
-        self._path = [self.Element(temp_name)] + self._path[len(src):]
-
-    def restore_from(self, dst: _ASTPath, temp_name: str):
-        if len(self._path) == 0:
-            return
-        if self._path[0].arg_name == temp_name:
-            self._path = list(_ASTPath(dst)) + self._path[1:]
-
-    def get_from_tree(self, tree: ast.AST):
-        cur = tree
-        for p in self._path:
-            if p.is_list():
-                try:
-                    cur = getattr(cur, p.arg_name)[p.index]
-                except IndexError:
-                    return None
-            else:
-                cur = getattr(cur, p.arg_name)
-        return cur
 
 
 def _update_list(list_: list[_ASTPath], src: _ASTPath, dst: _ASTPath):

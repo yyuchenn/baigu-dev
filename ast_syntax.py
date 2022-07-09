@@ -1,6 +1,112 @@
 from __future__ import annotations
 import ast
+import string
 from re import compile
+from copy import deepcopy
+
+
+class _ASTPath:
+    class Element:
+        def __init__(self, arg_name: str, index: int | None = None):
+            self.arg_name = arg_name
+            self.index = index
+
+        def __eq__(self, other):
+            return self.arg_name == other.arg_name and self.index == other.index
+
+        def __str__(self):
+            if self.index is None:
+                return f"{self.arg_name}"
+            return f"{self.arg_name}_{self.index}"
+
+        def is_list(self) -> bool:
+            return self.index is not None
+
+    def __init__(self, path: _ASTPath | list[Element] | tuple[Element]):
+        self._path = list(deepcopy(path))
+
+    def __eq__(self, other):
+        return self._path == list(other)
+
+    def __getitem__(self, item):
+        return self._path[item]
+
+    def __len__(self):
+        return len(self._path)
+
+    def __iter__(self):
+        for i in self._path:
+            yield i
+
+    def __str__(self):
+        return str([str(i) for i in self._path])
+
+    @property
+    def parent_path(self) -> _ASTPath:
+        if len(self._path) == 0:
+            raise Exception("root has no parent")
+        return _ASTPath(list(self)[:-1])
+
+    def child_path(self, arg_name: str, index: int | None = None) -> _ASTPath:
+        return _ASTPath(list(self) + [self.Element(arg_name, index)])
+
+    def is_in_list(self) -> bool:
+        if len(self._path) == 0:
+            return False
+        return self._path[-1].is_list()
+
+    def common_path(self, path: _ASTPath) -> tuple:
+        shorter, longer = self, path
+        if len(path) < len(self):
+            shorter, longer = path, self
+        result = []
+        for i, item in enumerate(shorter):
+            if longer[i] == item:
+                result += [item]
+            else:
+                break
+        return tuple(result)
+
+    def has_child(self, path: _ASTPath) -> bool:
+        return list(path)[:len(self._path)] == self._path
+
+    def is_in_same_list(self, path: _ASTPath) -> bool:
+        if not self.is_in_list():
+            return False
+        if len(path) < len(self._path):
+            return False
+        if self.common_path(path) != tuple(self._path) and self.common_path(path) != tuple(self._path)[:-1]:
+            return False
+        last = list(path)[len(self._path) - 1]
+        if not last.is_list() or last.arg_name != self._path[-1].arg_name:
+            return False
+        return True
+
+    def move_to(self, src: _ASTPath, temp_name: str):
+        if len(src) > len(self._path):
+            return
+        for i in range(len(src)):
+            if src[i] != self._path[i]:
+                return
+        self._path = [self.Element(temp_name)] + self._path[len(src):]
+
+    def restore_from(self, dst: _ASTPath, temp_name: str):
+        if len(self._path) == 0:
+            return
+        if self._path[0].arg_name == temp_name:
+            self._path = list(_ASTPath(dst)) + self._path[1:]
+
+    def get_from_tree(self, tree: ast.AST):
+        cur = tree
+        for p in self._path:
+            if p.is_list():
+                try:
+                    cur = getattr(cur, p.arg_name)[p.index]
+                except IndexError:
+                    return None
+            else:
+                cur = getattr(cur, p.arg_name)
+        return cur
 
 
 lvalue_spots = [(ast.Assign, "targets"), (ast.AugAssign, "target"), (ast.For, "target"),
@@ -34,18 +140,29 @@ class NodeType:
         return list(filter(lambda a: isinstance(type_(), a.acceptable_type), self.attrs))
 
     def fix(self, node):
-        ret: list[str] = []
+        ret: list[_ASTPath.Element] = []
         for attr in self.attrs:
             if attr.is_not_null and not getattr(node, attr.name):
-                ret.append(attr.name)
                 chaff = getattr(ASTChaff, attr.acceptable_type.__name__)()
                 if (node.__class__, attr.name) in lvalue_spots:
                     chaff = ASTChaff.Name()
                 if attr.is_list:
                     setattr(node, attr.name, [chaff])
+                    ret.append(_ASTPath.Element(attr.name, 0))
                 else:
                     setattr(node, attr.name, chaff)
+                    ret.append(_ASTPath.Element(attr.name))
         return ret
+
+
+def fix_dict(_, node):
+    if len(node.keys) > len(node.values):
+        node.keys.extend([ASTChaff.Constant() for _ in range(len(node.keys) - len(node.values))])
+        return [_ASTPath.Element("keys", len(node.keys))]
+    if len(node.keys) < len(node.values):
+        node.values.extend([ASTChaff.Constant() for _ in range(len(node.values) - len(node.keys))])
+        return [_ASTPath.Element("values", len(node.values))]
+    return []
 
 
 def dst_validator(dst_: type, src_: type):
@@ -79,6 +196,11 @@ class ASTChaff:
         return ast.Name(id="_", ctx=ast.Store())
 
     @staticmethod
+    def Constant():
+        from random import choice
+        return ast.Constant(value=''.join(choice(string.ascii_letters) for _ in range(16)))
+
+    @staticmethod
     def slice():
         return ast.Index(value=ASTChaff.expr())
 
@@ -105,9 +227,8 @@ def _construct_syntax(asdl: list[str]):
 
 
 # TODO: Yield/YieldFrom can only be in some specific places
-# TODO: Dict fix: len(keys) == len(values)
 # TODO: Compare fix: len(comparators) == len(ops)
-# TODO: arg fix: len(args) <= len(defaults)
+# TODO: arg fix: len(args) <= len(defaults), including kw
 
 # do not obfuscate the followings: type annotation, f-string, comprehension
 _ASDL = ["Module(stmt* body)",
@@ -178,3 +299,5 @@ _ASDL = ["Module(stmt* body)",
          ]
 
 NODE_SYNTAX: dict[type, NodeType] = _construct_syntax(_ASDL)
+
+setattr(NODE_SYNTAX[ast.Dict], "fix", fix_dict.__get__(NODE_SYNTAX[ast.Dict]))
