@@ -20,6 +20,8 @@ class TreeDiff:
             if field in DISMISSED_FIELDS:
                 return
             if isinstance(value, list):
+                if len(self._path.child_path(field).get_from_tree(self.src)) > len(value):
+                    self.diffs.append(self._path.child_path(field))
                 for i, item in enumerate(value):
                     if isinstance(item, ast.AST):
                         self._path, _ = self._path.child_path(field, i), self._path
