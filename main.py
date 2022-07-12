@@ -3,6 +3,7 @@ import astor
 from ast_toolbox import ASTShuffler, ASTFixer
 from unpack_proto import unpack
 from helper import TreeDiff
+from ast_syntax import _ASTPath
 
 
 def run(src: str):
@@ -11,7 +12,7 @@ def run(src: str):
     for i in range(1):
         shuffler = ASTShuffler(tree)
         shuffler.shuffle("stmt", instructions=instructions, n=20)
-        # shuffler.shuffle("expr", instructions=instructions, n=20)
+        shuffler.shuffle("expr", n=20)
         fixer = ASTFixer(shuffler.tree)
         print(astor.to_source(fixer.tree))
         tree2 = ast.parse(astor.to_source(fixer.tree))

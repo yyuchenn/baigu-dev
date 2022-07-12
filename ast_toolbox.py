@@ -81,6 +81,8 @@ class ASTShuffler(NodeVisitor):
                         dst_potential_list.append(path.child_path(attr.name, index))
                     else:
                         dst_node = path.child_path(attr.name).get_from_tree(self.tree)
+                        if dst_node is None:
+                            continue
                         if dst_validator(src_parent_node.__class__, dst_node.__class__)(
                                 NodeAttribute(f"PSEUDO {src[-1].arg_name}")):
                             dst_potential_list.append(path.child_path(attr.name))

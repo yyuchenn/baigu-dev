@@ -156,13 +156,44 @@ class NodeType:
 
 
 def fix_dict(_, node):
-    if len(node.keys) > len(node.values):
-        node.keys.extend([ASTChaff.Constant() for _ in range(len(node.keys) - len(node.values))])
-        return [_ASTPath.Element("keys", len(node.keys))]
-    if len(node.keys) < len(node.values):
-        node.values.extend([ASTChaff.Constant() for _ in range(len(node.values) - len(node.keys))])
-        return [_ASTPath.Element("values", len(node.values))]
+    diff = len(node.keys) - len(node.values)
+    if diff > 0:
+        node.values.extend([ASTChaff.Constant() for _ in range(diff)])
+        return [_ASTPath.Element("values", len(node.keys) - diff)]
+    if diff < 0:
+        node.keys.extend([ASTChaff.Constant() for _ in range(-diff)])
+        return [_ASTPath.Element("keys", len(node.keys) + diff)]
     return []
+
+
+def fix_compare(_, node):
+    changed = []
+    if node.left is None:
+        node.left = ASTChaff.Constant()
+        changed.append(_ASTPath.Element("left"))
+    diff = len(node.ops) - len(node.comparators)
+    if diff > 0:
+        node.comparators.extend([ASTChaff.expr() for _ in range(diff)])
+        changed.append(_ASTPath.Element("comparators", len(node.ops) - diff))
+    if diff < 0:
+        node.ops.extend([ASTChaff.cmpop() for _ in range(-diff)])
+        changed.append(_ASTPath.Element("ops", len(node.ops) + diff))
+    return changed
+
+
+def fix_arguments(_, node):
+    changed = []
+    if len(node.args) < len(node.defaults):
+        changed.append(_ASTPath.Element("args", len(node.args)))
+        node.args.extend([ASTChaff.arg() for _ in range(len(node.defaults) - len(node.args))])
+    if len(node.kwonlyargs) > 0 or len(node.kw_defaults) > 0:
+        if not node.vararg:
+            node.vararg = ASTChaff.arg()
+            changed.append(_ASTPath.Element("vararg"))
+        if len(node.kwonlyargs) < len(node.kw_defaults):
+            changed.append(_ASTPath.Element("kwonlyargs", len(node.kwonlyargs)))
+            node.kwonlyargs.extend([ASTChaff.arg() for _ in range(len(node.kw_defaults) - len(node.kwonlyargs))])
+    return changed
 
 
 def dst_validator(dst_: type, src_: type):
@@ -184,12 +215,22 @@ def dst_validator(dst_: type, src_: type):
 
 class ASTChaff:
     @staticmethod
+    def _unique_name():
+        from random import choice
+        return '___' + ''.join(choice(string.ascii_letters) for _ in range(8))
+
+    @staticmethod
     def stmt():
         return ast.Pass()
 
     @staticmethod
     def expr():
-        return ast.Constant(42)
+        from random import randint
+        return ast.Constant(randint(0, 2147483647))  # constant cannot be negative
+
+    @staticmethod
+    def cmpop():
+        return ast.Eq()
 
     @staticmethod
     def Name():
@@ -197,8 +238,7 @@ class ASTChaff:
 
     @staticmethod
     def Constant():
-        from random import choice
-        return ast.Constant(value=''.join(choice(string.ascii_letters) for _ in range(16)))
+        return ast.Constant(value=ASTChaff._unique_name())
 
     @staticmethod
     def slice():
@@ -210,7 +250,7 @@ class ASTChaff:
 
     @staticmethod
     def arg():
-        return ast.arg(arg='_')
+        return ast.arg(arg=ASTChaff._unique_name())
 
 
 def _construct_syntax(asdl: list[str]):
@@ -301,3 +341,5 @@ _ASDL = ["Module(stmt* body)",
 NODE_SYNTAX: dict[type, NodeType] = _construct_syntax(_ASDL)
 
 setattr(NODE_SYNTAX[ast.Dict], "fix", fix_dict.__get__(NODE_SYNTAX[ast.Dict]))
+setattr(NODE_SYNTAX[ast.Compare], "fix", fix_compare.__get__(NODE_SYNTAX[ast.Compare]))
+setattr(NODE_SYNTAX[ast.arguments], "fix", fix_arguments.__get__(NODE_SYNTAX[ast.arguments]))
