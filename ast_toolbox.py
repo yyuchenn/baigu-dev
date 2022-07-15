@@ -74,7 +74,7 @@ class ASTShuffler(NodeVisitor):
                 src_node = src.get_from_tree(self.tree)
                 src_parent_node = src.parent_path.get_from_tree(self.tree)
                 attr_list = NODE_SYNTAX[dst_parent_node.__class__].filter_attrs(getattr(ast, var_type))
-                attr_list = filter(dst_validator(dst_parent_node.__class__, src_node.__class__), attr_list)
+                attr_list = filter(dst_validator(dst_parent_node, src_node), attr_list)
                 for attr in attr_list:
                     if attr.is_list:
                         index = randint(0, len(getattr(dst_parent_node, attr.name)))
@@ -83,7 +83,7 @@ class ASTShuffler(NodeVisitor):
                         dst_node = path.child_path(attr.name).get_from_tree(self.tree)
                         if dst_node is None:
                             continue
-                        if dst_validator(src_parent_node.__class__, dst_node.__class__)(
+                        if dst_validator(src_parent_node, dst_node)(
                                 NodeAttribute(f"PSEUDO {src[-1].arg_name}")):
                             dst_potential_list.append(path.child_path(attr.name))
         if not dst_potential_list:

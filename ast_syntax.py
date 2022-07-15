@@ -111,7 +111,7 @@ class _ASTPath:
 
 lvalue_spots = [(ast.Assign, "targets"), (ast.AugAssign, "target"), (ast.For, "target"),
                 (ast.withitem, "optional_vars")]
-lvalues = [ast.Attribute, ast.Subscript, ast.Starred, ast.Name]  # actually, List & Tuple can be lvalues as well
+lvalues = [ast.Attribute, ast.Subscript, ast.Starred, ast.Name, ast.List, ast.Tuple]  # actually, List & Tuple can be lvalues as well
 
 
 class NodeAttribute:
@@ -144,6 +144,8 @@ class NodeType:
         for attr in self.attrs:
             if attr.is_not_null and not getattr(node, attr.name):
                 chaff = getattr(ASTChaff, attr.acceptable_type.__name__)()
+                if node.__class__ in lvalues and node.ctx == ast.Store() and attr.acceptable_type == ast.expr:
+                    chaff = ASTChaff.Name()
                 if (node.__class__, attr.name) in lvalue_spots:
                     chaff = ASTChaff.Name()
                 if attr.is_list:
@@ -196,17 +198,33 @@ def fix_arguments(_, node):
     return changed
 
 
-def dst_validator(dst_: type, src_: type):
+def fix_boolop(_, node):
+    length = len(node.values)
+    if length < 2:
+        node.values.extend([ASTChaff.expr() for _ in range(2 - length)])
+        return [_ASTPath.Element("values", length)]
+    return []
+
+
+def dst_validator(dst: ast.AST, src: ast.AST):
+    dst_type = dst.__class__
+    src_type = src.__class__
+
     def validator(dst_attr: NodeAttribute) -> bool:
-        if src_ == ast.FormattedValue:
-            if dst_ != ast.JoinedStr or dst_attr.name != "values":
+        if src_type == ast.FormattedValue:
+            if dst_type != ast.JoinedStr or dst_attr.name != "values":
                 return False
 
-        if (dst_, dst_attr.name) in lvalue_spots and src_ not in lvalues:
+        if dst_type in lvalues and dst.ctx.__class__ == ast.Store:
+            if (not isinstance(src_type, ast.slice)) and (src_type not in lvalues or src.ctx.__class__ != ast.Store):
+                # ?
+                return False
+
+        if (dst_type, dst_attr.name) in lvalue_spots and (src_type not in lvalues or src.ctx.__class__ != ast.Store):
             return False
 
-        if dst_ == ast.JoinedStr and dst_attr.name == "values":
-            if src_ != ast.Str and src_ != ast.FormattedValue:
+        if dst_type == ast.JoinedStr and dst_attr.name == "values":
+            if src_type != ast.Str and src_type != ast.FormattedValue:
                 return False
         return True
 
@@ -267,8 +285,7 @@ def _construct_syntax(asdl: list[str]):
 
 
 # TODO: Yield/YieldFrom can only be in some specific places
-# TODO: Compare fix: len(comparators) == len(ops)
-# TODO: arg fix: len(args) <= len(defaults), including kw
+# TODO: tuple cannot be lvalue of argAssign
 
 # do not obfuscate the followings: type annotation, f-string, comprehension
 _ASDL = ["Module(stmt* body)",
@@ -343,3 +360,4 @@ NODE_SYNTAX: dict[type, NodeType] = _construct_syntax(_ASDL)
 setattr(NODE_SYNTAX[ast.Dict], "fix", fix_dict.__get__(NODE_SYNTAX[ast.Dict]))
 setattr(NODE_SYNTAX[ast.Compare], "fix", fix_compare.__get__(NODE_SYNTAX[ast.Compare]))
 setattr(NODE_SYNTAX[ast.arguments], "fix", fix_arguments.__get__(NODE_SYNTAX[ast.arguments]))
+setattr(NODE_SYNTAX[ast.BoolOp], "fix", fix_boolop.__get__(NODE_SYNTAX[ast.BoolOp]))

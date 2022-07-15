@@ -1,6 +1,6 @@
 import ast
 
-from ast_toolbox import _ASTPath, NODE_SYNTAX
+from ast_toolbox import _ASTPath
 
 
 def unpack(tree: ast.AST, shuffle_actions: list[tuple[_ASTPath, _ASTPath]],
