@@ -14,7 +14,8 @@ def unpack(tree: ast.AST, shuffle_actions: list[tuple[_ASTPath, _ASTPath]],
             setattr(parent, action[-1].arg_name, None)
     for action in shuffle_actions[::-1]:
         src, dst = action
-        if src.is_in_list() and src.is_in_same_list(dst) and dst[len(src) - 1].index >= src[-1].index:
+        if src.is_in_list() and src.is_in_same_list(dst) and dst[len(src) - 1].index >= src[-1].index \
+                and dst.is_in_list():
             dst[len(src) - 1].index -= 1
         src_node = src.get_from_tree(tree)
         src_parent_node = src.parent_path.get_from_tree(tree)

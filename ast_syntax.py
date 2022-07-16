@@ -144,7 +144,7 @@ class NodeType:
         for attr in self.attrs:
             if attr.is_not_null and not getattr(node, attr.name):
                 chaff = getattr(ASTChaff, attr.acceptable_type.__name__)()
-                if node.__class__ in lvalues and node.ctx == ast.Store() and attr.acceptable_type == ast.expr:
+                if node.__class__ in lvalues and node.ctx.__class__ == ast.Store and attr.acceptable_type == ast.expr:
                     chaff = ASTChaff.Name()
                 if (node.__class__, attr.name) in lvalue_spots:
                     chaff = ASTChaff.Name()
@@ -214,6 +214,12 @@ def dst_validator(dst: ast.AST, src: ast.AST):
         if src_type == ast.FormattedValue:
             if dst_type != ast.JoinedStr or dst_attr.name != "values":
                 return False
+
+        if dst_attr.name == "test" and (src_type == ast.Tuple or src_type == ast.List):
+            return False
+
+        if dst_type == ast.AugAssign and dst_attr.name == "target" and (src_type == ast.Tuple or src_type == ast.List):
+            return False
 
         if dst_type in lvalues and dst.ctx.__class__ == ast.Store:
             if (not isinstance(src_type, ast.slice)) and (src_type not in lvalues or src.ctx.__class__ != ast.Store):
@@ -285,7 +291,7 @@ def _construct_syntax(asdl: list[str]):
 
 
 # TODO: Yield/YieldFrom can only be in some specific places
-# TODO: tuple cannot be lvalue of argAssign
+# TODO: cannot use a starred expression in a dictionary value
 
 # do not obfuscate the followings: type annotation, f-string, comprehension
 _ASDL = ["Module(stmt* body)",
