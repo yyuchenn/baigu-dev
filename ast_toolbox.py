@@ -97,7 +97,7 @@ class ASTShuffler(NodeVisitor):
             if len(instructions) > i:
                 src, dst = instructions[i]
             src_ = _ASTPath(src)
-            print(str(src), str(dst))
+            # print(str(src), str(dst))
             src_node = src.get_from_tree(self.tree)
             src_parent_node = src.parent_path.get_from_tree(self.tree)
             dst_node = dst.get_from_tree(self.tree)

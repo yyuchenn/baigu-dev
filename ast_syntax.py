@@ -215,6 +215,9 @@ def dst_validator(dst: ast.AST, src: ast.AST):
             if dst_type != ast.JoinedStr or dst_attr.name != "values":
                 return False
 
+        if src_type == ast.Starred or dst_type == ast.Starred:
+            return False
+
         if dst_attr.name == "test" and (src_type == ast.Tuple or src_type == ast.List):
             return False
 
@@ -276,6 +279,10 @@ class ASTChaff:
     def arg():
         return ast.arg(arg=ASTChaff._unique_name())
 
+    @staticmethod
+    def excepthandler():
+        return ast.ExceptHandler(body=[ASTChaff.stmt()])
+
 
 def _construct_syntax(asdl: list[str]):
     node_dict: dict[type, NodeType] = {}
@@ -291,9 +298,9 @@ def _construct_syntax(asdl: list[str]):
 
 
 # TODO: Yield/YieldFrom can only be in some specific places
-# TODO: cannot use a starred expression in a dictionary value
+# TODO: kw_defaults
 
-# do not obfuscate the followings: type annotation, f-string, comprehension
+# do not obfuscate the followings: type annotation, f-string, comprehension, Starred value
 _ASDL = ["Module(stmt* body)",
          "Interactive(stmt* body)",
          "Expression(expr body)",
